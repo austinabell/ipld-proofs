@@ -1,4 +1,4 @@
-use crate::{Error, Proof, DEFAULT_HASH_CODE};
+use crate::{Error, Proof, DEFAULT_HASH_CODE, link_scanner::LinkScanner};
 use anyhow::Result;
 use cid::{Cid, Code};
 use forest_db::{Error as DbError, Store};
@@ -50,10 +50,8 @@ where
             return Err(Error::NodeNotFound.into());
         }
 
-        // * This Clones all nodes visited, this is slower in the case where a small percentage
-        // * of nodes visited are included in the proof. Possibly change to only clone used nodes.
-        let total_nodes = self.visited.borrow().len();
         let visited = self.visited.borrow();
+        let total_nodes = visited.len();
         let mut unvisited_nodes = visited.iter();
 
         let mut proof_nodes = Vec::with_capacity(total_nodes);
@@ -64,7 +62,7 @@ where
         //* This can be modified to keep track of all links and compute shortest canonical path.
         let mut scan_cache = HashMap::<Cid, (Cid, Vec<u8>)>::with_capacity(total_nodes);
 
-        loop {
+        'proof: loop {
             if let Some(r) = root {
                 if r == current_cid {
                     break;
@@ -75,15 +73,34 @@ where
                 // Link has been scanned already, push the cached node and update the current cid.
                 proof_nodes.push(c_bytes);
                 current_cid = c_cid;
-                continue;
+                continue 'proof;
             }
 
             // Scan for links until one is found to be connected.
-            for (_u_cid, _u_bytes) in &mut unvisited_nodes {
-                // Scan links
-                todo!()
+            for (u_cid, u_bytes) in &mut unvisited_nodes {
+                // Create iterator which scans over links lazily.
+                let scanner = LinkScanner::from(u_bytes.as_ref());
 
                 // Iterate through links: use node if it links to current node add to cache if not.
+                let mut link_buffer = Vec::with_capacity(8);
+                for link in scanner {
+                    if link == current_cid {
+                        // The current node's link was found in another node, include to proof
+                        // chain and discard other links found. The other links can be discarded
+                        // because the Ipld graph is acyclic.
+                        proof_nodes.push(u_bytes.clone());
+                        current_cid = *u_cid;
+                        continue 'proof;
+                    }
+
+                    // Push link found to buffer, will be added to cache if not found in node.
+                    link_buffer.push(link);
+                }
+
+                for link in link_buffer {
+                    //* This can be modified to keep the smaller node, but this doesn't matter
+                    scan_cache.entry(link).or_insert((*u_cid, u_bytes.clone()));
+                }
             }
 
             break;
