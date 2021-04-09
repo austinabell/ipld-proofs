@@ -1,0 +1,11 @@
+[package]
+name = "ipld-proof-gen"
+version = "0.1.0"
+authors = ["austinabell <austinabell8@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+forest_ipld = "0.1"
+ipld_blockstore = "0.1"
+forest_db = "0.1"
+cid = { package = "forest_cid", version = "0.3", features = ["cbor"] }
