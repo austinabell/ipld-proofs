@@ -1,4 +1,4 @@
-# ipld-proof-gen
+# ipld-proofs
 
 This library will generate and validate proofs for the existance of data in an [Ipld](https://docs.ipld.io/) dag.
 

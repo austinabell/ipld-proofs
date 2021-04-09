@@ -1,9 +1,10 @@
-use crate::{Error, Proof, DEFAULT_HASH_CODE, link_scanner::LinkScanner};
+use crate::{link_scanner::LinkScanner, Error, Proof, DEFAULT_HASH_CODE};
 use anyhow::Result;
 use cid::{Cid, Code};
 use forest_db::{Error as DbError, Store};
 use ipld_blockstore::BlockStore;
 use serde::Serialize;
+use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::{collections::HashMap, error::Error as StdError};
 
@@ -34,7 +35,7 @@ where
     /// Generates a proof with the raw serialized bytes of the element being proven up to the
     /// root provided. If the item being proved does not link to the root, an error will be
     /// returned.
-    pub fn generate_proof_to_cid<I: Serialize>(&self, proof_item: &I, root: Cid) -> Result<Proof> {
+    pub fn generate_proof_to_cid<I: Serialize>(&self, proof_item: &I, root: &Cid) -> Result<Proof> {
         self.generate_proof_raw(serde_cbor::to_vec(proof_item)?, Some(root))
     }
 
@@ -44,7 +45,7 @@ where
     ///
     /// This does not currently generate a canonical or shortest proof, this will just find
     /// the first connection.
-    pub fn generate_proof_raw(&self, bytes: Vec<u8>, root: Option<Cid>) -> Result<Proof> {
+    pub fn generate_proof_raw(&self, bytes: Vec<u8>, root: Option<&Cid>) -> Result<Proof> {
         let mut current_cid = cid::new_from_cbor(&bytes, DEFAULT_HASH_CODE);
         if !self.visited.borrow().contains_key(&current_cid) {
             return Err(Error::NodeNotFound.into());
@@ -64,8 +65,8 @@ where
 
         'proof: loop {
             if let Some(r) = root {
-                if r == current_cid {
-                    break;
+                if r == &current_cid {
+                    break 'proof;
                 }
             }
 
@@ -82,7 +83,7 @@ where
                 let scanner = LinkScanner::from(u_bytes);
 
                 // Iterate through links: use node if it links to current node add to cache if not.
-                let mut link_buffer = Vec::with_capacity(8);
+                let mut link_buffer = SmallVec::<[Cid; 8]>::new();
                 for link in scanner {
                     if link == current_cid {
                         // The current node's link was found in another node, include to proof
@@ -116,6 +117,8 @@ where
 {
     fn get_bytes(&self, cid: &Cid) -> Result<Option<Vec<u8>>, Box<dyn StdError>> {
         let bytes = self.base.get_bytes(cid)?;
+
+        // Intentionally not using cache to avoid consensus inconsistencies with base.
         if let Some(bytes) = &bytes {
             self.visited
                 .borrow_mut()
@@ -183,5 +186,88 @@ where
         K: AsRef<[u8]>,
     {
         self.base.bulk_delete(keys)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use forest_ipld::ipld;
+
+    #[test]
+    fn puts_tracked() {
+        let bs = forest_db::MemoryDB::default();
+        let p_gen = ProofGenerator::new(&bs);
+
+        let cid = p_gen.put(&8, DEFAULT_HASH_CODE).unwrap();
+        assert_eq!(p_gen.get::<u8>(&cid).unwrap(), Some(8));
+        assert_eq!(p_gen.visited.borrow().len(), 1);
+
+        let proof = p_gen.generate_proof(&8).unwrap();
+        proof.validate().unwrap();
+    }
+
+    #[test]
+    fn dag_tracking_generation() {
+        //      r        u
+        //     /|\
+        //    a b c
+        //       / \
+        //      d   e
+        //      |
+        //      f <-
+        //      |
+        //      g
+
+        let bs = forest_db::MemoryDB::default();
+
+        // Scope variables to make sure others are dropped
+        let r = {
+            let g = bs.put(&"value", DEFAULT_HASH_CODE).unwrap();
+            let f = bs.put(&ipld!([g, 3u8]), DEFAULT_HASH_CODE).unwrap();
+            let d = bs.put(&ipld!([5u8, f]), DEFAULT_HASH_CODE).unwrap();
+            let e = bs.put(&8u8, DEFAULT_HASH_CODE).unwrap();
+            let c = bs
+                .put(&ipld!({ "d": d, "e": e }), DEFAULT_HASH_CODE)
+                .unwrap();
+            let b = bs.put(&"Some other value", DEFAULT_HASH_CODE).unwrap();
+            let a = bs.put(&ipld!([2u8, "3", 4u64]), DEFAULT_HASH_CODE).unwrap();
+            bs.put(&ipld!([a, b, c]), DEFAULT_HASH_CODE).unwrap()
+        };
+
+        let u = bs.put(&"unrelated node", DEFAULT_HASH_CODE).unwrap();
+
+        // Start using the proof generator here
+        let p_gen = ProofGenerator::new(&bs);
+
+        // Load unrelated node to make sure it doesn't affect proof
+        assert_eq!(p_gen.get::<String>(&u).unwrap().unwrap(), "unrelated node".to_string());
+
+        let [_, _, c]: [Cid; 3] = p_gen.get(&r).unwrap().unwrap();
+
+        #[derive(Debug, serde::Deserialize)]
+        struct TmpC {
+            d: Cid,
+            e: Cid,
+        }
+        let TmpC { d, .. } = p_gen.get(&c).unwrap().unwrap();
+        let (_, d): (u8, Cid) = p_gen.get(&d).unwrap().unwrap();
+        let prove_node: (Cid, u8) = p_gen.get(&d).unwrap().unwrap();
+        assert_eq!(p_gen.get::<String>(&prove_node.0).unwrap().unwrap(), "value".to_string());
+
+        println!("here");
+        // Generate proof all the way to the root node
+        let proof = p_gen.generate_proof(&prove_node).unwrap();
+        assert_eq!(proof.nodes().len(), 4);
+        assert_eq!(proof.root(), r);
+        proof.validate().unwrap();
+        
+        println!("here2");
+
+        // Generate proof only to the `c` node
+        let proof = p_gen.generate_proof_to_cid(&prove_node, &c).unwrap();
+        assert_eq!(proof.nodes().len(), 3);
+        assert_eq!(proof.root(), c);
+        proof.validate().unwrap();
     }
 }
