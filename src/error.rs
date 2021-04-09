@@ -1,5 +1,5 @@
-use thiserror::Error;
 use cid::Cid;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -9,8 +9,5 @@ pub enum Error {
     )]
     NodeNotFound,
     #[error("Invalid proof, Cid {link:} not found in node: {data:?}")]
-    InvalidProof {
-        link: Cid,
-        data: Vec<u8>,
-    }
+    InvalidProof { link: Cid, data: Vec<u8> },
 }

@@ -10,6 +10,55 @@ use std::{collections::HashMap, error::Error as StdError};
 
 /// Blockstore wrapper which tracks interactions with the underlying store to be used for
 /// proof generation.
+///
+/// This structure can be used in place of a blockstore, but the computation will be the quickest
+/// if it's only used to load/store values used in the proof.
+///
+/// # Example
+/// The Ipld dag for the following example looks something like:
+///      r
+///     /|\
+///    a b c
+///     / \
+///    d   e
+///
+///
+/// ```
+/// use cid::{Cid, Code};
+/// use ipld_blockstore::BlockStore;
+/// use ipld_proofs::ProofGenerator;
+/// use forest_ipld::ipld;
+///
+/// let bs = forest_db::MemoryDB::default();
+///
+/// let e = bs.put(&8u8, Code::Blake2b256).unwrap();
+/// let d = bs.put(&"Some data", Code::Blake2b256).unwrap();
+/// let c = bs.put(&"Some other value", Code::Blake2b256).unwrap();
+/// let b = bs.put(&(d, e), Code::Blake2b256).unwrap();
+/// let a = bs.put(&ipld!([2u8, "3", 4u64]), Code::Blake2b256).unwrap();
+/// let root = bs.put(&ipld!([a, b, c]), Code::Blake2b256).unwrap();
+///
+/// // Start using the proof generator here
+/// let p_gen = ProofGenerator::new(&bs);
+///
+/// // Retrieve data from a store
+/// let [_, b, _]: [Cid; 3] = p_gen.get(&root).unwrap().unwrap();
+/// let (d, _): (Cid, Cid) = p_gen.get(&b).unwrap().unwrap();
+/// let data: String = p_gen.get(&d).unwrap().unwrap();
+///     
+/// // Generate a proof of the data
+/// let proof = p_gen.generate_proof(&data).unwrap();
+/// assert_eq!(proof.nodes().len(), 3);
+/// assert_eq!(proof.root(), root);
+/// proof.validate().unwrap();
+
+/// // Or generate only to a specific node
+/// let proof = p_gen.generate_proof_to_cid(&"Some data", &b).unwrap();
+/// assert_eq!(proof.nodes().len(), 2);
+/// assert_eq!(proof.root(), b);
+/// proof.validate().unwrap();
+///
+/// ```
 pub struct ProofGenerator<'s, BS> {
     base: &'s BS,
     visited: RefCell<HashMap<Cid, Vec<u8>>>,
@@ -100,7 +149,9 @@ where
 
                 for link in link_buffer {
                     //* This can be modified to keep the smaller node, but this doesn't matter
-                    scan_cache.entry(link).or_insert((*u_cid, u_bytes.clone()));
+                    scan_cache
+                        .entry(link)
+                        .or_insert_with(|| (*u_cid, u_bytes.clone()));
                 }
             }
 
@@ -123,7 +174,7 @@ where
             self.visited
                 .borrow_mut()
                 .entry(*cid)
-                .or_insert(bytes.clone());
+                .or_insert_with(|| bytes.clone());
         }
         Ok(bytes)
     }
@@ -133,7 +184,7 @@ where
         self.visited
             .borrow_mut()
             .entry(cid)
-            .or_insert(bytes.clone());
+            .or_insert_with(|| bytes.clone());
         self.write(cid.to_bytes(), bytes)?;
         Ok(cid)
     }
@@ -241,7 +292,10 @@ mod tests {
         let p_gen = ProofGenerator::new(&bs);
 
         // Load unrelated node to make sure it doesn't affect proof
-        assert_eq!(p_gen.get::<String>(&u).unwrap().unwrap(), "unrelated node".to_string());
+        assert_eq!(
+            p_gen.get::<String>(&u).unwrap().unwrap(),
+            "unrelated node".to_string()
+        );
 
         let [_, _, c]: [Cid; 3] = p_gen.get(&r).unwrap().unwrap();
 
@@ -253,16 +307,16 @@ mod tests {
         let TmpC { d, .. } = p_gen.get(&c).unwrap().unwrap();
         let (_, d): (u8, Cid) = p_gen.get(&d).unwrap().unwrap();
         let prove_node: (Cid, u8) = p_gen.get(&d).unwrap().unwrap();
-        assert_eq!(p_gen.get::<String>(&prove_node.0).unwrap().unwrap(), "value".to_string());
+        assert_eq!(
+            p_gen.get::<String>(&prove_node.0).unwrap().unwrap(),
+            "value".to_string()
+        );
 
-        println!("here");
         // Generate proof all the way to the root node
         let proof = p_gen.generate_proof(&prove_node).unwrap();
         assert_eq!(proof.nodes().len(), 4);
         assert_eq!(proof.root(), r);
         proof.validate().unwrap();
-        
-        println!("here2");
 
         // Generate proof only to the `c` node
         let proof = p_gen.generate_proof_to_cid(&prove_node, &c).unwrap();

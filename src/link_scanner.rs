@@ -3,13 +3,14 @@ use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use cid::Cid;
 use std::{
     convert::TryFrom,
-    io::{Read, Seek, Cursor},
+    io::{Cursor, Read, Seek},
 };
 
+/// Wrapper of bytes that allows links to be scanned for lazily as an iterator.
 pub(crate) struct LinkScanner<R> {
     reader: R,
     remaining: usize,
-    scratch: [u8; 100],
+    scratch: [u8; 70],
 }
 
 impl<R> LinkScanner<R> {
@@ -17,8 +18,8 @@ impl<R> LinkScanner<R> {
         Self {
             reader,
             remaining: 1,
-            // TODO the 100 value can be tweaked, don't need much more than 32 bytes for def Cid
-            scratch: [0u8; 100],
+            // TODO the 70 value can be tweaked, don't need much more than 32 bytes for def Cid
+            scratch: [0u8; 70],
         }
     }
 }
@@ -148,52 +149,3 @@ pub(crate) fn cbor_read_header_buf<B: Read>(br: &mut B, scratch: &mut [u8]) -> R
         Err(anyhow!("invalid header cbor_read_header_buf"))
     }
 }
-
-// pub(crate) fn scan_for_links<B: Read + Seek, F>(buf: &mut B) -> Result<Vec<Cid>> {
-//     let mut scratch: [u8; 100] = [0; 100];
-//     let mut remaining = 1;
-//     let mut ret = Vec::new();
-//     while remaining > 0 {
-//         let (maj, extra) = cbor_read_header_buf(buf, &mut scratch)?;
-//         match maj {
-//             // MajUnsignedInt, MajNegativeInt, MajOther
-//             0 | 1 | 7 => {}
-//             // MajByteString, MajTextString
-//             2 | 3 => {
-//                 buf.seek(std::io::SeekFrom::Current(extra as i64))?;
-//             }
-//             // MajTag
-//             6 => {
-//                 // Check if the tag refers to a CID
-//                 if extra == 42 {
-//                     let (maj, extra) = cbor_read_header_buf(buf, &mut scratch)?;
-//                     // The actual CID is expected to be a byte string
-//                     if maj != 2 {
-//                         return Err(anyhow!("expected cbor type byte string in input"));
-//                     }
-//                     if extra > 100 {
-//                         return Err(anyhow!("string in cbor input too long"));
-//                     }
-//                     buf.read_exact(&mut scratch[..extra])?;
-//                     let c = Cid::try_from(&scratch[1..extra])?;
-//                     ret.push(c);
-//                 } else {
-//                     remaining += 1;
-//                 }
-//             }
-//             // MajArray
-//             4 => {
-//                 remaining += extra;
-//             }
-//             // MajMap
-//             5 => {
-//                 remaining += extra * 2;
-//             }
-//             _ => {
-//                 return Err(anyhow!("unhandled cbor type: {}", maj));
-//             }
-//         }
-//         remaining -= 1;
-//     }
-//     Ok(ret)
-// }

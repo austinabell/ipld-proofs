@@ -4,6 +4,8 @@ use cid::Cid;
 
 /// Describes an Ipld proof.
 /// Contains only nodes connected to the root. These nodes are ordered from the root to the base.
+///
+/// Proofs can only be generated through the [ProofGenerator](crate::ProofGenerator) struct.
 pub struct Proof {
     pub(crate) nodes: Vec<Vec<u8>>,
 }
