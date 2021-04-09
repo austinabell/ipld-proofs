@@ -79,7 +79,7 @@ where
             // Scan for links until one is found to be connected.
             for (u_cid, u_bytes) in &mut unvisited_nodes {
                 // Create iterator which scans over links lazily.
-                let scanner = LinkScanner::from(u_bytes.as_ref());
+                let scanner = LinkScanner::from(u_bytes);
 
                 // Iterate through links: use node if it links to current node add to cache if not.
                 let mut link_buffer = Vec::with_capacity(8);

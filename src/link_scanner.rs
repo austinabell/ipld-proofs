@@ -29,6 +29,12 @@ impl<'a> From<&'a [u8]> for LinkScanner<Cursor<&'a [u8]>> {
     }
 }
 
+impl<'a> From<&'a Vec<u8>> for LinkScanner<Cursor<&'a [u8]>> {
+    fn from(bytes: &'a Vec<u8>) -> Self {
+        Self::new(Cursor::new(bytes))
+    }
+}
+
 impl From<Vec<u8>> for LinkScanner<Cursor<Vec<u8>>> {
     fn from(bytes: Vec<u8>) -> Self {
         Self::new(Cursor::new(bytes))
