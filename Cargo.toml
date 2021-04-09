@@ -9,3 +9,9 @@ forest_ipld = "0.1"
 ipld_blockstore = "0.1"
 forest_db = "0.1"
 cid = { package = "forest_cid", version = "0.3", features = ["cbor"] }
+anyhow = "1.0"
+serde = "1.0"
+serde_cbor = { package = "cs_serde_cbor", version = "0.12", features = [
+    "tags"
+] }
+thiserror = "1.0"
