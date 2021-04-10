@@ -57,7 +57,6 @@ use std::{collections::HashMap, error::Error as StdError};
 /// assert_eq!(proof.nodes().len(), 2);
 /// assert_eq!(proof.root(), b);
 /// proof.validate().unwrap();
-///
 /// ```
 pub struct ProofGenerator<'s, BS> {
     base: &'s BS,
