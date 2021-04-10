@@ -259,6 +259,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::many_single_char_names)]
     fn dag_tracking_generation() {
         //      r        u
         //     /|\
