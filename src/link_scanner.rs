@@ -7,6 +7,7 @@ use std::{
 };
 
 /// Wrapper of bytes that allows links to be scanned for lazily as an iterator.
+#[derive(Debug)]
 pub(crate) struct LinkScanner<R> {
     reader: R,
     remaining: usize,

@@ -1,13 +1,71 @@
 use crate::{link_scanner::LinkScanner, Error, DEFAULT_HASH_CODE};
 use anyhow::Result;
 use cid::Cid;
+use forest_encoding::ser::SerializeSeq;
+use forest_encoding::serde_bytes;
+use serde::{
+    de::{Deserializer, SeqAccess, Visitor},
+    ser::Serializer,
+    Deserialize, Serialize,
+};
+use std::fmt;
 
 /// Describes an Ipld proof.
 /// Contains only nodes connected to the root. These nodes are ordered from the root to the base.
 ///
 /// Proofs can only be generated through the [ProofGenerator](crate::ProofGenerator) struct.
+#[derive(Debug, PartialEq)]
 pub struct Proof {
     pub(crate) nodes: Vec<Vec<u8>>,
+}
+
+impl Serialize for Proof {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(self.nodes.len()))?;
+        for e in &self.nodes {
+            seq.serialize_element(&serde_bytes::Bytes::new(&e))?;
+        }
+        seq.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Proof {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ProofVisitor;
+
+        impl<'de> Visitor<'de> for ProofVisitor {
+            type Value = Vec<Vec<u8>>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a vector of bytes")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Vec<Vec<u8>>, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut vec = if let Some(hint) = seq.size_hint() {
+                    Vec::with_capacity(hint)
+                } else {
+                    Vec::new()
+                };
+
+                while let Some(elem) = seq.next_element::<serde_bytes::ByteBuf>()? {
+                    vec.push(elem.into_vec());
+                }
+                Ok(vec)
+            }
+        }
+        Ok(Proof {
+            nodes: deserializer.deserialize_seq(ProofVisitor)?,
+        })
+    }
 }
 
 impl Proof {
@@ -48,5 +106,22 @@ impl Proof {
     /// Returns reference to nodes in the proof.
     pub fn nodes(&self) -> &[Vec<u8>] {
         &self.nodes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serialize_symmetric() {
+        let proof = Proof {
+            nodes: vec![b"one".to_vec(), b"two".to_vec(), b"three".to_vec()],
+        };
+        let serialized_bytes = serde_cbor::to_vec(&proof).unwrap();
+        assert_eq!(
+            serde_cbor::from_slice::<Proof>(&serialized_bytes).unwrap(),
+            proof
+        );
     }
 }

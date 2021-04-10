@@ -58,6 +58,7 @@ use std::{collections::HashMap, error::Error as StdError};
 /// assert_eq!(proof.root(), b);
 /// proof.validate().unwrap();
 /// ```
+#[derive(Debug)]
 pub struct ProofGenerator<'s, BS> {
     base: &'s BS,
     visited: RefCell<HashMap<Cid, Vec<u8>>>,
