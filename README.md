@@ -1,6 +1,6 @@
 # ipld-proofs
 
-[<img alt="build status" src="https://img.shields.io/github/workflow/status/austinabell/ipld-proofs/CI/main?style=for-the-badge" height="20">](https://github.com/austinabell/ipld-proofs/actions?query=branch%3Amain)
+[<img alt="build status" src="https://img.shields.io/github/actions/workflow/status/austinabell/ipld-proofs/ci.yml?branch=main&style=for-the-badge" height="20">](https://github.com/austinabell/ipld-proofs/actions?query=branch%3Amain)
 
 This library will generate and validate proofs for the existence of data in an [Ipld](https://docs.ipld.io/) dag. These proofs are not true Merkle proofs, as compared with Ethereum because the Ipld dag is not a binary tree. Because of this, all nodes on the path to the data are included in the proof, which includes the data itself.
 
